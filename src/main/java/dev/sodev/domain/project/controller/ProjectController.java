@@ -1,45 +1,83 @@
 package dev.sodev.domain.project.controller;
 
+import dev.sodev.domain.enums.SearchType;
+
+import dev.sodev.domain.likes.dto.response.LikeResponse;
+import dev.sodev.domain.likes.service.LikeService;
+
+
+import dev.sodev.domain.project.dto.ProjectDto;
 import dev.sodev.domain.project.dto.requset.ProjectInfoRequest;
-import dev.sodev.domain.project.dto.requset.ProjectRequest;
 import dev.sodev.domain.project.dto.response.ProjectResponse;
-import dev.sodev.domain.project.dto.skillDTO;
 import dev.sodev.domain.project.service.ProjectService;
 import dev.sodev.global.Response;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/v1")
+@RequestMapping("/v1/projects")
 public class ProjectController {
 
     private final ProjectService projectService;
 
-    @GetMapping("/projects")
-    public Response<ProjectResponse> selectProject(@RequestBody ProjectRequest request) {
-        ProjectResponse selectProject = projectService.selectProject(request);
+    private final LikeService likeService;
+
+    @GetMapping("/{projectId}")
+    public Response<ProjectResponse> selectProject(@PathVariable Long projectId) {
+        ProjectResponse selectProject = projectService.selectProject(projectId);
         return Response.success(selectProject);
     }
 
-    @PostMapping("/projects")
-    public Response<ProjectResponse> createFeed(@RequestBody ProjectInfoRequest request) {
+    @PostMapping
+    public Response<ProjectResponse> createFeed(@RequestBody @Valid ProjectInfoRequest request) {
         ProjectResponse project = projectService.createProject(request);
         return Response.success(project);
     }
 
-    @PutMapping("/projects")
-    public Response<ProjectResponse> updateFeed(@RequestBody ProjectInfoRequest request) {
-        ProjectResponse project = projectService.updateProject(request);
+    @PutMapping("/{projectId}")
+    public Response<ProjectResponse> updateFeed(@PathVariable Long projectId, @RequestBody @Valid ProjectInfoRequest request) {
+        ProjectResponse project = projectService.updateProject(projectId, request);
         return Response.success(project);
     }
 
-    @DeleteMapping("/projects")
-    public Response<ProjectResponse> deleteFeed(@RequestBody ProjectRequest request) {
-        ProjectResponse project = projectService.deleteProject(request);
+    @DeleteMapping("/{projectId}")
+    public Response<ProjectResponse> deleteFeed(@PathVariable Long projectId) {
+        ProjectResponse project = projectService.deleteProject(projectId);
         return Response.success(project);
+    }
+
+    @GetMapping("/search")
+    public Page<ProjectDto> searchAll(@RequestParam(required = false) String searchType,
+                                      @RequestParam(required = false) String keyword,
+                                      @RequestParam(required = false) List<String> skillSet,
+                                      Pageable pageable) {
+        return projectService.searchProject(SearchType.valueOf(searchType), keyword, skillSet, pageable);
+    }
+    @PostMapping("/{projectId}/likes")
+    public Response<LikeResponse> like(@PathVariable Long projectId) {
+        LikeResponse response = likeService.like(projectId);
+        return Response.success(response);
+    }
+    @GetMapping("/{memberName}/likes")
+    public Page<ProjectDto> likeProjectList(@PathVariable String memberName, Pageable pageable){
+        return projectService.likeProject(memberName, pageable);
+    }
+    @GetMapping("/{memberName}/offers")
+    public Page<ProjectDto> offerProject(@PathVariable String memberName){
+        return projectService.offerProject(memberName);
+    }
+    @GetMapping("/{memberName}/applies")
+    public Page<ProjectDto> applyProject(@PathVariable String memberName, Pageable pageable){
+        return projectService.applyProject(memberName, pageable);
+    }
+    @GetMapping("/{memberName}/history")
+    public Page<ProjectDto> projectHistory(@PathVariable String memberName, Pageable pageable){
+        return projectService.projectHistory(memberName, pageable);
     }
 }

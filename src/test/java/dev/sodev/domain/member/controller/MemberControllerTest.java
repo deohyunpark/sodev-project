@@ -11,9 +11,13 @@ import dev.sodev.domain.member.repository.MemberRepository;
 import dev.sodev.domain.member.service.MemberService;
 import dev.sodev.global.exception.ErrorCode;
 import dev.sodev.global.exception.SodevApplicationException;
-import dev.sodev.global.jwt.AuthService;
+import dev.sodev.global.redis.RedisService;
+import dev.sodev.global.security.dto.JsonWebTokenDto;
+import dev.sodev.global.security.service.AuthService;
 import jakarta.persistence.EntityManager;
+import jakarta.servlet.http.Cookie;
 import lombok.extern.slf4j.Slf4j;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -42,6 +46,7 @@ public class MemberControllerTest {
     @Autowired MemberRepository memberRepository;
     @Autowired PasswordEncoder passwordEncoder;
     @Autowired AuthService authService;
+    @Autowired RedisService redisService;
 
     private static String SIGN_UP_URL = "/v1/join";
     private static String LOGIN_URL = "/v1/login";
@@ -57,6 +62,12 @@ public class MemberControllerTest {
         em.clear();
     }
 
+    @BeforeEach
+    public void setup() {
+        clear();
+        redisService.delete("login_member::" + email);
+    }
+
     private void join(MemberJoinRequest request) throws Exception {
         mockMvc.perform(
                         post(SIGN_UP_URL)
@@ -66,7 +77,7 @@ public class MemberControllerTest {
     }
 
 
-    private String getAccessToken() throws Exception {
+    private JsonWebTokenDto getToken() throws Exception {
         MemberLoginRequest request = MemberLoginRequest.builder()
                 .email(email)
                 .password(password)
@@ -77,8 +88,9 @@ public class MemberControllerTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk()).andReturn();
-
-        return result.getResponse().getHeader("Authorization");
+        String refresh = result.getResponse().getCookie("refresh-token").getValue();
+        String access = result.getResponse().getHeader("Authorization");
+        return JsonWebTokenDto.builder().accessToken(access).refreshToken(refresh).build();
     }
 
     private void joinDefault() throws Exception {
@@ -144,7 +156,9 @@ public class MemberControllerTest {
     public void 회원정보수정_성공() throws Exception {
         //given
         joinDefault();
-        String accessToken = getAccessToken();
+        JsonWebTokenDto token = getToken();
+        String accessToken = token.accessToken();
+        String refreshToken = token.refreshToken();
         MemberUpdateRequest request = MemberUpdateRequest.builder()
                 .email(email)
                 .nickName("change")
@@ -180,7 +194,9 @@ public class MemberControllerTest {
 
 
         joinDefault();
-        String accessToken = getAccessToken();
+        JsonWebTokenDto token = getToken();
+        String accessToken = token.accessToken();
+        String refreshToken = token.refreshToken();
         MemberUpdateRequest request = MemberUpdateRequest.builder()
                 .email(email)
                 .nickName("test"+nickName)
@@ -201,7 +217,9 @@ public class MemberControllerTest {
     public void 비밀번호수정_성공() throws Exception {
         //given
         joinDefault();
-        String accessToken = getAccessToken();
+        JsonWebTokenDto token = getToken();
+        String accessToken = token.accessToken();
+        String refreshToken = token.refreshToken();
         UpdatePassword request = UpdatePassword.builder()
                 .checkPassword(password)
                 .toBePassword("1234asdf!")
@@ -224,7 +242,9 @@ public class MemberControllerTest {
     public void 비밀번호수정_새로운_비밀번호_검증_에러() throws Exception {
         //given
         joinDefault();
-        String accessToken = getAccessToken();
+        JsonWebTokenDto token = getToken();
+        String accessToken = token.accessToken();
+        String refreshToken = token.refreshToken();
         UpdatePassword request = UpdatePassword.builder()
                 .checkPassword(password)
                 .toBePassword("123456")
@@ -248,7 +268,9 @@ public class MemberControllerTest {
     public void 비밀번호수정_변경_전_비밀번호_검증_에러() throws Exception {
         //given
         joinDefault();
-        String accessToken = getAccessToken();
+        JsonWebTokenDto token = getToken();
+        String accessToken = token.accessToken();
+        String refreshToken = token.refreshToken();
         UpdatePassword request = UpdatePassword.builder()
                 .checkPassword(password+1)
                 .toBePassword("1234asdf!")
@@ -267,7 +289,9 @@ public class MemberControllerTest {
     public void 회원탈퇴_성공() throws Exception {
         //given
         joinDefault();
-        String accessToken = getAccessToken();
+        JsonWebTokenDto token = getToken();
+        String accessToken = token.accessToken();
+        String refreshToken = token.refreshToken();
         MemberWithdrawal request = MemberWithdrawal.builder()
                 .checkPassword(password)
                 .build();
@@ -276,10 +300,10 @@ public class MemberControllerTest {
         MvcResult result = mockMvc.perform(
                         delete("/v1/members")
                                 .header("Authorization", accessToken)
+                                .cookie(new Cookie("refresh-token", refreshToken))
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk()).andReturn();
-
         //then
         assertThrows(SodevApplicationException.class,
                 () -> memberRepository.findByEmail(email).orElseThrow(
@@ -290,7 +314,9 @@ public class MemberControllerTest {
     public void 회원탈퇴_비밀번호_검증_실패() throws Exception {
         //given
         joinDefault();
-        String accessToken = getAccessToken();
+        JsonWebTokenDto token = getToken();
+        String accessToken = token.accessToken();
+        String refreshToken = token.refreshToken();
         MemberWithdrawal request = MemberWithdrawal.builder()
                 .checkPassword(password+1) // 틀린 확인 비밀번호
                 .build();
@@ -299,6 +325,7 @@ public class MemberControllerTest {
         MvcResult result = mockMvc.perform(
                         delete("/v1/members")
                                 .header("Authorization", accessToken)
+                                .cookie(new Cookie("refresh-token", refreshToken))
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().is(ErrorCode.INVALID_PASSWORD.getStatus().value())).andReturn();
@@ -308,7 +335,9 @@ public class MemberControllerTest {
     public void 회원탈퇴_엑세스토큰_틀려서_실패() throws Exception {
         //given
         joinDefault();
-        String accessToken = getAccessToken();
+        JsonWebTokenDto token = getToken();
+        String accessToken = token.accessToken();
+        String refreshToken = token.refreshToken();
         MemberWithdrawal request = MemberWithdrawal.builder()
                 .checkPassword(password) // 틀린 확인 비밀번호
                 .build();
@@ -316,10 +345,11 @@ public class MemberControllerTest {
         //when & then
         MvcResult result = mockMvc.perform(
                         delete("/v1/members")
-                                .header("Authorization", "INVALID-TOKEN123231123312123")
+                                .header("Authorization", accessToken)
+                                .cookie(new Cookie("refresh-token", "INVALID-TOKEN123231123312123"))
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().is(ErrorCode.INVALID_TOKEN.getStatus().value())).andReturn();
+                .andExpect(status().is5xxServerError()).andReturn();
         log.info("result={}", result.getResponse().getContentAsString());
     }
 

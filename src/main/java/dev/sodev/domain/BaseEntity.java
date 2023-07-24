@@ -1,6 +1,7 @@
 package dev.sodev.domain;
 
 import jakarta.persistence.*;
+import lombok.Getter;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedBy;
@@ -11,6 +12,7 @@ import java.time.LocalDateTime;
 
 @EntityListeners(AuditingEntityListener.class)
 @MappedSuperclass
+@Getter
 public class BaseEntity {
 
     @CreatedDate
@@ -30,10 +32,12 @@ public class BaseEntity {
     @PrePersist
     public void prePersist() {
         createdAt = LocalDateTime.now();
+        createdBy = this.createdBy;
     }
 
     @PreUpdate
     public void preUpdate() {
         modifiedAt = LocalDateTime.now();
+        modifiedBy = this.modifiedBy;
     }
 }
